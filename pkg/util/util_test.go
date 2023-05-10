@@ -15,18 +15,16 @@ limitations under the License.
 */
 
 // blackbox test of util package
-package util_test
+package util
 
 import (
 	"sync"
 	"sync/atomic"
 	"testing"
-
-	"github.com/spdk/spdk-csi/pkg/util"
 )
 
 func TestTryLockSequential(t *testing.T) {
-	var tryLock util.TryLock
+	var tryLock TryLock
 
 	// acquire lock
 	if !tryLock.Lock() {
@@ -44,7 +42,7 @@ func TestTryLockSequential(t *testing.T) {
 }
 
 func TestTryLockConcurrent(t *testing.T) {
-	var tryLock util.TryLock
+	var tryLock TryLock
 	var wg sync.WaitGroup
 	var lockCount int32
 	const taskCount = 50

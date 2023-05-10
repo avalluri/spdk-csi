@@ -28,6 +28,7 @@ import (
 	"github.com/spdk/sma-goapi/v1alpha1/nvmf"
 	"github.com/spdk/sma-goapi/v1alpha1/nvmf_tcp"
 	"github.com/spdk/sma-goapi/v1alpha1/virtio_blk"
+	"google.golang.org/grpc"
 	"k8s.io/klog"
 )
 
@@ -39,13 +40,13 @@ const (
 	smaNvmfTCPSubNqnPref = "nqn.2022-04.io.spdk.csi:cnode0:uuid:"
 )
 
-func NewSpdkCsiSmaInitiator(volumeContext map[string]string, smaClient smarpc.StorageManagementAgentClient, smaTargetType string, kvmPciBridges int) (SpdkCsiInitiator, error) {
+func NewSpdkCsiSmaInitiator(volumeContext map[string]string, xpuClient *grpc.ClientConn, xpuTargetType string, kvmPciBridges int) (SpdkCsiInitiator, error) {
 	iSmaCommon := &smaCommon{
-		smaClient:     smaClient,
+		smaClient:     smarpc.NewStorageManagementAgentClient(xpuClient),
 		volumeContext: volumeContext,
 		timeout:       60 * time.Second,
 	}
-	switch smaTargetType {
+	switch xpuTargetType {
 	case "xpu-sma-nvmftcp":
 		return &smainitiatorNvmfTCP{sma: iSmaCommon}, nil
 	case "xpu-sma-nvme":
@@ -59,7 +60,7 @@ func NewSpdkCsiSmaInitiator(volumeContext map[string]string, smaClient smarpc.St
 			kvmPciBridges: kvmPciBridges,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unknown SMA targetType: %s", smaTargetType)
+		return nil, fmt.Errorf("unknown SMA targetType: %s", xpuTargetType)
 	}
 }
 

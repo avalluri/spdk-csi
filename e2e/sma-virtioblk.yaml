@@ -12,7 +12,7 @@ data:
   #             http://IPADDR:PORT
   nodeserver-config.json: |-
     {
-      "smaList": [
+      "xpuList": [
         {
           "name": "IPU0",
           "targetType": "xpu-sma-virtioblk",
