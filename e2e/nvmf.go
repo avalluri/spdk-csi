@@ -48,11 +48,22 @@ var _ = ginkgo.Describe("SPDKCSI-NVMF", func() {
 				}
 			})
 
-			ginkgo.By("create a PVC and bind it to a pod", func() {
+			ginkgo.By("create a pvc and bind it to a pod", func() {
 				deployPVC()
 				deployTestPod()
-				defer deletePVCAndTestPod()
-				err := waitForTestPodReady(f.ClientSet, 5*time.Minute)
+				err := waitForTestPodReady(f.ClientSet)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+
+				deleteTestPod()
+				err = waitForTestPodGone(f.ClientSet)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+
+				deletePVC()
+				err = waitForPVCGone(f.ClientSet, "spdkcsi-pvc")
 				if err != nil {
 					ginkgo.Fail(err.Error())
 				}
@@ -61,14 +72,25 @@ var _ = ginkgo.Describe("SPDKCSI-NVMF", func() {
 			ginkgo.By("check data persistency after the pod is removed and recreated", func() {
 				deployPVC()
 				deployTestPod()
-				defer deletePVCAndTestPod()
 
-				err := waitForTestPodReady(f.ClientSet, 3*time.Minute)
+				err := waitForTestPodReady(f.ClientSet)
 				if err != nil {
 					ginkgo.Fail(err.Error())
 				}
 
 				err = checkDataPersist(f)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+
+				deleteTestPod()
+				err = waitForTestPodGone(f.ClientSet)
+				if err != nil {
+					ginkgo.Fail(err.Error())
+				}
+
+				deletePVC()
+				err = waitForPVCGone(f.ClientSet, "spdkcsi-pvc")
 				if err != nil {
 					ginkgo.Fail(err.Error())
 				}

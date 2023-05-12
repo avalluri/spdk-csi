@@ -303,7 +303,7 @@ function prepare_spdk() {
 	echo "======== start spdk target for storage node ========"
 	grep Huge /proc/meminfo
 	# start spdk target for storage node
-	sudo docker run -id --name "${SPDK_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm "${SPDKIMAGE}" /root/spdk/build/bin/spdk_tgt
+	sudo docker run -id --name "${SPDK_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm "${SPDKIMAGE}" /root/spdk/build/bin/spdk_tgt -L all
 	sleep 20s
 	# wait for spdk target ready
 	sudo docker exec -i "${SPDK_CONTAINER}" timeout 5s /root/spdk/scripts/rpc.py framework_wait_init
@@ -319,12 +319,11 @@ function prepare_spdk() {
 function prepare_sma() {
 	echo "======== start spdk target for IPU node ========"
 	# start spdk target for IPU node
-	sudo docker run -id --name "${SPDK_SMA_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm -v /var/tmp:/var/tmp -v /lib/modules:/lib/modules "${SPDKIMAGE}"
-	sudo docker exec -i "${SPDK_SMA_CONTAINER}" sh -c "HUGEMEM=2048 /root/spdk/scripts/setup.sh; /root/spdk/build/bin/spdk_tgt -S /var/tmp -m 0x3 &"
+	sudo docker run -id --name "${SPDK_SMA_CONTAINER}" --privileged --net host -v /dev/hugepages:/dev/hugepages -v /dev/shm:/dev/shm -v /var/tmp:/var/tmp -v /lib/modules:/lib/modules "${SPDKIMAGE}" bash -c "/root/spdk/scripts/setup.sh && /root/spdk/build/bin/spdk_tgt -S /var/tmp -m 0x3 -L all"
 	sleep 20s
 	echo "======== start sma server ========"
-	# start sma server
-	sudo docker exec -d "${SPDK_SMA_CONTAINER}" sh -c "/root/spdk/scripts/sma.py --config /root/sma.yaml"
+	# start sma server, run this cmd manually.
+	# sudo docker exec -d "${SPDK_SMA_CONTAINER}" sh -c "SMA_LOGLEVEL=debug /root/spdk/scripts/sma.py --address 127.0.0.1 --port 5114 --config /root/sma.yaml"
 	sleep 10s
 }
 

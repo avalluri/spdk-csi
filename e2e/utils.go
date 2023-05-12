@@ -136,42 +136,32 @@ func deletePVC() {
 	}
 }
 
-func deletePVCAndTestPod() {
-	deleteTestPod()
-	deletePVC()
-}
-
-func deployTestPodWithMultiPvcs() {
+func deployTestPodWithMultiPVCs() {
 	_, err := framework.RunKubectl(nameSpace, "apply", "-f", testPodWithMultiPvcsPath)
 	if err != nil {
 		e2elog.Logf("failed to create test pod with multiple pvcs: %s", err)
 	}
 }
 
-func deleteTestPodWithMultiPvcs() {
+func deleteTestPodWithMultiPVCs() {
 	_, err := framework.RunKubectl(nameSpace, "delete", "-f", testPodWithMultiPvcsPath)
 	if err != nil {
 		e2elog.Logf("failed to delete test pod with multiple pvcs: %s", err)
 	}
 }
 
-func deployMultiPvcs() {
+func deployMultiPVCs() {
 	_, err := framework.RunKubectl(nameSpace, "apply", "-f", multiPvcsPath)
 	if err != nil {
 		e2elog.Logf("failed to create pvcs: %s", err)
 	}
 }
 
-func deleteMultiPvcs() {
+func deleteMultiPVCs() {
 	_, err := framework.RunKubectl(nameSpace, "delete", "-f", multiPvcsPath)
 	if err != nil {
 		e2elog.Logf("failed to delete pvcs: %s", err)
 	}
-}
-
-func deleteMultiPvcsAndTestPodWithMultiPvcs() {
-	deleteTestPodWithMultiPvcs()
-	deleteMultiPvcs()
 }
 
 func waitForControllerReady(c kubernetes.Interface, timeout time.Duration) error {
@@ -223,8 +213,8 @@ func verifyNodeServerLog(expLogerrMsgMap map[string]string) error {
 	return nil
 }
 
-func waitForTestPodReady(c kubernetes.Interface, timeout time.Duration) error {
-	err := wait.PollImmediate(3*time.Second, timeout, func() (bool, error) {
+func waitForTestPodReady(c kubernetes.Interface) error {
+	err := wait.PollImmediate(3*time.Second, 3*time.Minute, func() (bool, error) {
 		pod, err := c.CoreV1().Pods(nameSpace).Get(ctx, testPodName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -235,6 +225,24 @@ func waitForTestPodReady(c kubernetes.Interface, timeout time.Duration) error {
 		return false, nil
 	})
 	if err != nil {
+		logx, errx := framework.RunKubectl(nameSpace, "describe", "pod", "spdkcsi-test")
+		if errx != nil {
+			return fmt.Errorf("failed to describe test pod: %w", errx)
+		}
+		e2elog.Logf("Log from test pod", logx)
+
+		logy, erry := framework.RunKubectl(nameSpace, "logs", "-l", "app=spdkcsi-controller", "-c", "spdkcsi-controller", "--tail", "-1")
+		if erry != nil {
+			return fmt.Errorf("failed to obtain the log from controller server: %w", err)
+		}
+		e2elog.Logf("Log from controller server", logy)
+
+		logz, errz := framework.RunKubectl(nameSpace, "logs", "-l", "app=spdkcsi-node", "-c", "spdkcsi-node", "--tail", "-1")
+		if errz != nil {
+			return fmt.Errorf("failed to obtain the log from node server: %w", err)
+		}
+		e2elog.Logf("Log from node server", logz)
+
 		return fmt.Errorf("failed to wait for test pod ready: %w", err)
 	}
 	return nil
@@ -257,7 +265,7 @@ func waitForTestPodGone(c kubernetes.Interface) error {
 	return nil
 }
 
-func waitForPvcGone(c kubernetes.Interface, pvcName string) error {
+func waitForPVCGone(c kubernetes.Interface, pvcName string) error {
 	err := wait.PollImmediate(3*time.Second, 5*time.Minute, func() (bool, error) {
 		_, err := c.CoreV1().PersistentVolumeClaims(nameSpace).Get(ctx, pvcName, metav1.GetOptions{})
 		if err != nil {
@@ -320,7 +328,7 @@ func checkDataPersist(f *framework.Framework) error {
 	}
 
 	deployTestPod()
-	err = waitForTestPodReady(f.ClientSet, 5*time.Minute)
+	err = waitForTestPodReady(f.ClientSet)
 	if err != nil {
 		return err
 	}
@@ -335,7 +343,7 @@ func checkDataPersist(f *framework.Framework) error {
 	return err
 }
 
-func checkDataPersistForMultiPvcs(f *framework.Framework) error {
+func checkDataPersistForMultiPVCs(f *framework.Framework) error {
 	dataContents := []string{
 		"Data that needs to be stored to vol1",
 		"Data that needs to be stored to vol2",
@@ -354,14 +362,14 @@ func checkDataPersistForMultiPvcs(f *framework.Framework) error {
 		execCommandInPod(f, fmt.Sprintf("echo %s > %s", dataContents[i], dataPaths[i]), nameSpace, &opt)
 	}
 
-	deleteTestPodWithMultiPvcs()
+	deleteTestPodWithMultiPVCs()
 	err := waitForTestPodGone(f.ClientSet)
 	if err != nil {
 		return err
 	}
 
-	deployTestPodWithMultiPvcs()
-	err = waitForTestPodReady(f.ClientSet, 3*time.Minute)
+	deployTestPodWithMultiPVCs()
+	err = waitForTestPodReady(f.ClientSet)
 	if err != nil {
 		return err
 	}
