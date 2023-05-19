@@ -34,6 +34,10 @@ var _ = ginkgo.Describe("SPDKCSI-NVMF", func() {
 
 	ginkgo.Context("Test SPDK CSI NVMF", func() {
 		ginkgo.It("Test SPDK CSI NVMF", func() {
+			if isXpu() {
+				ginkgo.Skip("Skipping SPDKCSI-NVMF test: Running on a host")
+			}
+
 			ginkgo.By("checking controller statefulset is running", func() {
 				err := waitForControllerReady(f.ClientSet, 4*time.Minute)
 				if err != nil {

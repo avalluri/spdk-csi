@@ -6,8 +6,24 @@
 # FIXME (JingYan): too many "echo"s, try to define a logger function with different logging levels, including
 # "info", "warning" and "error", etc. and replace all the "echo" with the logger function
 
+ARCH=$(arch)
+if [[ "$(arch)" == "x86_64" ]]; then
+	ARCH="amd64"
+elif [[ "$(arch)" == "aarch64" ]]; then
+	ARCH="arm64"
+else
+	echo "${ARCH} is not supported"
+	exit 1
+fi
+
 SPDK_CONTAINER="spdkdev-e2e"
 SPDK_SMA_CONTAINER="spdkdev-sma"
+
+vm_qemu_bin=/usr/local/qemu/vfio-user-p3.0/bin/qemu-system-x86_64
+vmssh="ssh -p 10000 root@localhost"
+vmssh_nonblock="ssh -p 10000 -o StrictHostKeyChecking=accept-new -o ConnectTimeout=1 root@localhost"
+
+export PATH="/var/lib/minikube/binaries/${KUBE_VERSION}:/usr/local/go/bin:${PATH}"
 
 function export_proxy() {
 	local http_proxies
@@ -27,18 +43,6 @@ function export_proxy() {
 }
 
 function check_os() {
-	# check ARCH
-	ARCH=$(arch)
-	if [[ "$(arch)" == "x86_64" ]]; then
-		ARCH="amd64"
-	elif [[ "$(arch)" == "aarch64" ]]; then
-		ARCH="arm64"
-	else
-		echo "${ARCH} is not supported"
-		exit 1
-	fi
-	export ARCH
-
 	# check distro
 	source /etc/os-release
 	case $ID in
@@ -81,6 +85,8 @@ function check_os() {
 function allocate_hugepages() {
 	local HUGEPAGES_MIN=2048
 	local NR_HUGEPAGES=/proc/sys/vm/nr_hugepages
+	sync
+	echo 3 > /proc/sys/vm/drop_caches
 	if [[ -f ${NR_HUGEPAGES} ]]; then
 		if [[ $(< ${NR_HUGEPAGES}) -lt ${HUGEPAGES_MIN} ]]; then
 			echo ${HUGEPAGES_MIN} > ${NR_HUGEPAGES} || true
@@ -105,7 +111,14 @@ function install_packages_ubuntu() {
 					wget \
 					python3-pip \
 					ruby \
-					git
+					git \
+					curl \
+					whois \
+					cloud-image-utils \
+					jq \
+					qemu-utils \
+					genisoimage \
+					netcat
 	systemctl start docker
 
 	pip3 install yamllint==1.23.0 shellcheck-py==0.8.0.4
@@ -113,6 +126,9 @@ function install_packages_ubuntu() {
 }
 
 function install_packages_fedora() {
+	systemctl stop dnf-makecache.timer || true
+	systemctl disable dnf-makecache.timer || true
+	systemctl stop dnf-makecache.service || true
 	dnf check-update || true
 	dnf install -y make \
 					gcc \
@@ -123,7 +139,14 @@ function install_packages_fedora() {
 					wget \
 					python3-pip \
 					ruby \
-					git
+					git \
+ 					curl \
+					mkpasswd \
+					cloud-utils \
+					jq \
+					qemu-img \
+					genisoimage \
+					netcat
 	if ! hash docker &> /dev/null; then
 		dnf remove -y docker*
 		dnf install -y dnf-plugins-core
@@ -275,8 +298,8 @@ function build_spdkimage() {
 }
 
 function build_spdkcsi() {
-	export PATH="/usr/local/go/bin:${PATH}"
-	make clean
+	# comment the following line to prevent error "make: *** No rule to make target 'clean'.  Stop."
+	# make clean
 	echo "======== build spdkcsi ========"
 	make -C "${ROOTDIR}" spdkcsi
 	make -C "${ROOTDIR}" lint
@@ -334,9 +357,11 @@ function unit_test() {
 }
 
 function e2e_test() {
+	local xpu="$1"
+	echo "${xpu}"
 	echo "======== run E2E test ========"
 	export PATH="/var/lib/minikube/binaries/${KUBE_VERSION}:${PATH}"
-	make -C "${ROOTDIR}" e2e-test
+	make -C "${ROOTDIR}" e2e-test "${xpu}"
 }
 
 function helm_test() {
@@ -352,4 +377,293 @@ function cleanup() {
 	sudo docker rm -f "${SPDK_SMA_CONTAINER}" > /dev/null || :
 	sudo --preserve-env HOME="$HOME" "${ROOTDIR}/scripts/minikube.sh" clean || :
 	# TODO: remove dangling nvmf,iscsi disks
+}
+
+# set-timeout <TIMESPEC> <PID> forks a child process that will send
+# TERM signal to PID after TIMESPEC has elapsed, unless the child
+# process or the "sleep <TIMESPEC>" process have been terminated
+# before that.
+function set-timeout() {
+	local timespec="$1"
+	local pid="$2"
+	echo "set-timeout: will call 'on-timeout ${pid}' after ${timespec}."
+	(on-timeout "${timespec}" "${pid}" || true) &
+}
+
+function on-timeout() {
+	sleep "$1" >&/dev/null
+	# Print information that may reveal reasons for the timeout
+	echo "on-timeout, terminate $2"
+	dump-debug-info || true
+	kill "$2" # stop execution, trigger calling on-exit()
+	exit 1
+}
+
+# on-exit cleans up all child processes that otherwise might block the
+# tes script from terminating. Furthermore, if exit takes place for
+# any other reason than explicit "exit" command, backtrace will be
+# printed. This happens, for instance, if a command has failed (as we
+# are running with "bash -e"), or if an internal timeout has occured.
+function on-exit() {
+	local exit_status=$?
+	if [[ "$BASH_COMMAND" != "exit "* ]] && [[ -z "$backtrace_printed" ]]; then
+		# Unexpected exit, possibly due to an error or timeout
+		echo "Unexpected error when running: $BASH_COMMAND"
+		print_backtrace
+		backtrace_printed=1
+	fi
+	# Always cleanup child processes to prevent getting stuck on exit
+	pkill --parent "${MYPID}" || true
+	pkill -9 -f -- 'ssh -p 10000 root@localhost' 2>/dev/null || true
+	if [ -f /tmp/qemu-vm/qemu.pid ]; then
+		kill "$(< /tmp/qemu-vm/qemu.pid)" 2>/dev/null || true
+	fi
+	cleanup || true
+	exit $exit_status
+}
+
+function dump-debug-info() {
+	echo "===== dump-debug-info: host: ps axf ====="
+	ps axf
+	echo "===== dump-debug-info: vm: ps axf ====="
+	$vmssh_nonblock "ps axf"
+	echo "===== end of dump-debug-info ====="
+}
+
+function print_backtrace() {
+	# if errexit is not enabled, don't print a backtrace
+	[[ "$-" =~ e ]] || return 0
+	local args=("${BASH_ARGV[@]}")
+	# Reset IFS in case we were called from an environment where it was modified
+	IFS=" "$'\t'$'\n'
+	echo "========== Backtrace start: =========="
+	echo ""
+	echo "Command: ${BASH_SOURCE[2]}:${LINENO[2]} \"${BASH_COMMAND}\""
+	echo ""
+	for ((i = 2; i < ${#FUNCNAME[@]}; i++)); do
+		local func="${FUNCNAME[$i]}"
+		local line_nr="${BASH_LINENO[$((i - 1))]}"
+		local src="${BASH_SOURCE[$i]}"
+		local bt="" cmdline=()
+		if [[ -f "$src" ]]; then
+			bt=$(nl -w 4 -ba -nln "$src" | grep -B 5 -A 5 "^${line_nr}[^0-9]" \
+					 | sed "s/^/   /g" | sed "s/^   $line_nr /=> $line_nr /g")
+		fi
+		# If extdebug set the BASH_ARGC[i], try to fetch all the args
+		if ((BASH_ARGC[i] > 0)); then
+			# Use argc as index to reverse the stack
+			local argc=${BASH_ARGC[i]} arg
+			for arg in "${args[@]::BASH_ARGC[i]}"; do
+				cmdline[argc--]="[\"$arg\"]"
+			done
+			args=("${args[@]:BASH_ARGC[i]}")
+		fi
+		echo "in $src:$line_nr -> $func($(
+						IFS=","
+						printf '%s\n' "${cmdline[*]:-[]}"
+				))"
+		echo "     ..."
+		echo "${bt:-backtrace unavailable}"
+		echo "     ..."
+	done
+	echo ""
+	echo "========== Backtrace end =========="
+	return 0
+}
+
+function vm_build() {
+	# build oracle qemu
+	[ -f "$vm_qemu_bin" ] && {
+		echo "vm-build: already built: $vm_qemu_bin"
+		return 0
+	}
+	[ -d "${ROOTDIR}"/../spdk ] || git clone https://github.com/spdk/spdk "${ROOTDIR}"/../spdk
+
+	"${ROOTDIR}"/../spdk/test/common/config/vm_setup.sh -i -u -t qemu
+}
+
+function vm_start() {
+	if [ ! -f "$vm_qemu_bin" ]; then
+		echo "$vm_qemu_bin does not exist."
+		exit 1
+	fi
+
+	if ! $vmssh_nonblock "true"; then
+		__vm_qemu_launch || {
+			echo "vm_qemu_launch failed"
+			return 1
+		}
+	fi
+
+	# Configure proxies
+	local filep
+	local linep
+	local file
+	vars=("filep='' linep='' file='/etc/environment'")
+	vars+=("filep='' linep='export ' file='/etc/profile.d/proxy.sh'")
+	vars+=("filep='[Service]' linep='Environment=' file='/etc/systemd/system/containerd.service.d/proxy.conf'")
+	for var in "${vars[@]}"
+	do
+		(
+			eval "$var"
+			ext_no_proxy=$no_proxy,localhost,127.0.0.1,.internal,10.0.0.0/8,192.168.0.0/16
+			cat <<EOF |
+${filep}
+${linep}http_proxy=${http_proxy:-}
+${linep}https_proxy=${https_proxy:-}
+${linep}no_proxy=$ext_no_proxy
+${linep}HTTP_PROXY=${HTTP_PROXY:-}
+${linep}HTTPS_PROXY=${HTTPS_PROXY:-}
+${linep}NO_PROXY=$ext_no_proxy
+
+EOF
+			$vmssh "mkdir -p $(dirname "$file"); cat > $file"
+		)
+	done
+
+	# Copy scripts to vm. After this the vm function allows
+	# calling common functions in vm, too.
+	file_name=$(basename "$(realpath "${ROOTDIR}")")
+	tar cz --exclude '*.git*' "${ROOTDIR}"/../"${file_name}" | $vmssh "tar xzf -"
+
+	# Set port forwards from VM to local host.
+	$vmssh -R 9009:localhost:9009 -R 4420:localhost:4420 -R 3260:localhost:3260 -R 4421:localhost:4421 -R 5114:localhost:5114 "sleep inf" &
+}
+
+function vm_stop() {
+	echo "shutting down qemu"
+	$vmssh "shutdown -h now"
+}
+
+function __vm_qemu_launch() {
+	# Prepare the image and cloud-init
+	local workerdir
+	local fedora_qcow2
+	local cloudisodir
+	local cloud_iso
+	local qemu
+
+	workerdir=/tmp/qemu-vm
+	fedora_qcow2=${workerdir}/fedora-cloud-base.qcow2
+	cloudisodir=${workerdir}/cloud-init-iso-root
+	cloud_iso=${workerdir}/seed.iso
+	qemu=${QEMU:-/usr/local/qemu/vfio-user-p3.0/bin/qemu-system-x86_64}
+
+	mkdir -p "$(dirname ${fedora_qcow2})"
+	mkdir -p "${cloudisodir}"
+
+	for required_cmd in curl mkpasswd cloud-localds jq "${qemu}"; do
+		command -v "${required_cmd}" >/dev/null || {
+			echo "missing: ${required_cmd}"
+			exit 1
+		}
+	done
+
+	curl -Lk https://download.fedoraproject.org/pub/fedora/linux/releases/37/Cloud/x86_64/images/Fedora-Cloud-Base-37-1.7.x86_64.qcow2 > "${fedora_qcow2}"
+	echo "Check disk info and resize the qemu VM img"
+	df -h
+	qemu-img resize "${fedora_qcow2}" +20G
+	[ -f ~/.ssh/id_rsa ] || ssh-keygen -t rsa -f ~/.ssh/id_rsa -P ''
+
+	# Prepare cloud-init
+	(
+		cd "${cloudisodir}" || exit
+		echo "instance-id: qemu-vm" > meta_data
+		echo "local-hostname: qemu-vm" >> meta_data
+		cat > user_data << EOF
+#cloud-config
+disable_root: False
+chpasswd: { expire: False }
+ssh_pwauth: True
+users:
+- name: root
+  lock_passwd: False
+  ssh_authorized_keys:
+  - $(< ~/.ssh/id_rsa.pub)
+- name: fedora
+  lock_passwd: False
+  passwd: "$(echo fedora | mkpasswd -s)"
+  ssh_authorized_keys:
+  - $(< ~/.ssh/id_rsa.pub)
+chpasswd:
+  expire: False
+  users:
+  - name: root
+    password: "$(echo root | mkpasswd -s)"
+runcmd:
+  - [ mkdir, -p, /etc/default ]
+  - [ touch, /etc/default/grub ]
+  - [ sh, -c, "echo 'GRUB_CMDLINE_LINUX_DEFAULT=\"\${GRUB_CMDLINE_LINUX_DEFAULT} scsi_mod.use_blk_mq=1\"' >> /etc/default/grub" ]
+  - [ grub2-mkconfig, -o, /boot/grub2/grub.cfg ]
+  - [ reboot ]
+EOF
+		cloud-localds "${cloud_iso}" user_data meta_data
+	)
+	[ -f "${cloud_iso}" ] || {
+		echo "failed to create cloud-init image ${cloud_iso}"
+		exit 1
+	}
+
+	echo "checking current RAM info"
+	free -m
+	echo "clear cache"
+	sync; echo 3 > /proc/sys/vm/drop_caches
+	echo "checking current RAM info"
+	free -m
+	echo "setting the hugepage"
+	grep Huge /proc/meminfo
+	rm -f ${workerdir}/*.log
+
+	qemu_launch_cmd="sudo ${qemu} \
+				-m 6144 --enable-kvm -cpu host \
+				-object memory-backend-file,id=mem,size=6144M,mem-path=/dev/shm,share=on,prealloc=yes,host-nodes=0,policy=bind \
+				-numa node,memdev=mem \
+				-smp 6 \
+				-serial file:${workerdir}/serial.log -D ${workerdir}/qemu.log \
+				-chardev file,path=${workerdir}/seabios.log,id=seabios \
+				-device isa-debugcon,iobase=0x402,chardev=seabios \
+				-net user,hostfwd=tcp::10000-:22,hostfwd=tcp::10001-:8765 -net nic \
+				-drive file=${fedora_qcow2},if=none,id=os_disk \
+				-device ide-hd,drive=os_disk,bootindex=0 \
+				-device virtio-scsi-pci,num_queues=2 \
+				-device scsi-hd,drive=hd,vendor=RAWSCSI \
+				-drive if=none,id=hd,file=${cloud_iso},format=raw \
+				-qmp tcp:localhost:9090,server,nowait -device pci-bridge,chassis_nr=1,id=pci.spdk.0 \
+				-device pci-bridge,chassis_nr=2,id=pci.spdk.1 \
+				-device pci-bridge,chassis_nr=3,id=pci.spdk.2 \
+				-device pci-bridge,chassis_nr=4,id=pci.spdk.3"
+	echo "$qemu_launch_cmd" > "${workerdir}/qemu.launch.sh"
+	set -x
+	$qemu_launch_cmd &
+	qemu_pid=$!
+	set +x
+	echo "$qemu_pid" >"${workerdir}/qemu.pid"
+	sleep 1
+
+	if [ -d "/proc/$qemu_pid" ]; then
+		echo "VM started successfully"
+	else
+		echo "VM failed to start"
+		exit 1
+	fi
+
+	# Now the virtual machine is booting up. Wait for ssh to start working
+	if [ ! -f ~/.ssh/known_hosts ]; then
+		touch ~/.ssh/known_hosts
+	fi
+
+	ssh-keygen -R "[localhost]:10000"
+
+	echo "waiting for cloud-init to finish"
+	a=0
+	while ((a++ < 120))
+	do
+		$vmssh_nonblock 'cloud-init status --wait' 2>/dev/null && break
+		sleep 1
+		echo -n "."
+	done
+}
+
+function vm() {
+	$vmssh "DIR=spdk-csi/scripts/ci; source \${DIR}/env; source \${DIR}/common.sh; export_proxy; distro=fedora; $*"
 }

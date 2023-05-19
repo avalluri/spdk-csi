@@ -34,6 +34,10 @@ var _ = ginkgo.Describe("SPDKCSI-ISCSI", func() {
 
 	ginkgo.Context("Test SPDK CSI ISCSI", func() {
 		ginkgo.It("Test SPDK CSI ISCSI", func() {
+			if isXpu() {
+				ginkgo.Skip("Skipping SPDKCSI-ISCSI test: Running on a host")
+			}
+
 			ginkgo.By("checking controller statefulset is running", func() {
 				err := waitForControllerReady(f.ClientSet, 4*time.Minute)
 				if err != nil {

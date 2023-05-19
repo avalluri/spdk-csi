@@ -1,11 +1,17 @@
 #!/bin/bash -e
 
-DIR="$(dirname "$(readlink -f "$0")")"
+DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # shellcheck source=scripts/ci/env
 source "${DIR}/env"
 # shellcheck source=scripts/ci/common.sh
 source "${DIR}/common.sh"
+
+MYPID=$$
+
+set-timeout "${TIMEOUT_PREPARE:-45m}" "${MYPID}"
+
+trap on-exit EXIT ERR
 
 PROMPT_FLAG=${PROMPT_FLAG:-true}
 
@@ -56,5 +62,12 @@ stop_host_iscsid
 docker_login
 build_spdkimage
 
+# build oracle qemu for nvme
+if [[ "${ARCH}" == "amd64" ]]; then
+	vm_build
+fi
+
 # workaround minikube permissions issues when running as root in ci(-like) env
 sysctl fs.protected_regular=0
+
+exit 0

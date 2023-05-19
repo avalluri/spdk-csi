@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ const (
 	pvcPath                  = "pvc.yaml"
 	testPodPath              = "testpod.yaml"
 	smaNvmfConfigPath        = "sma-nvmf.yaml"
+	smaNvmeConfigPath        = "sma-nvme.yaml"
 	multiPvcsPath            = "multi-pvc.yaml"
 	testPodWithMultiPvcsPath = "testpod-multi-pvc.yaml"
 
@@ -40,6 +42,17 @@ const (
 )
 
 var ctx = context.TODO()
+
+func isXpu() bool {
+	for _, arg := range os.Args {
+		if strings.Contains(arg, "xpu") {
+			if strings.Split(arg, "=")[0] == "xpu" && strings.Split(arg, "=")[1] == "true" {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 func deployConfigs(configMapData string) {
 	configMapData = "--from-literal=config.json=" + configMapData
@@ -105,6 +118,20 @@ func deleteSmaNvmfConfig() {
 	_, err := framework.RunKubectl(nameSpace, "delete", "-f", smaNvmfConfigPath)
 	if err != nil {
 		e2elog.Logf("failed to delete Sma Nvmf configmap %s", err)
+	}
+}
+
+func deploySmaNvmeConfig() {
+	_, err := framework.RunKubectl(nameSpace, "apply", "-f", smaNvmeConfigPath)
+	if err != nil {
+		e2elog.Logf("failed to create Sma Nvme configmap %s", err)
+	}
+}
+
+func deleteSmaNvmeConfig() {
+	_, err := framework.RunKubectl(nameSpace, "delete", "-f", smaNvmeConfigPath)
+	if err != nil {
+		e2elog.Logf("failed to delete Sma Nvme configmap %s", err)
 	}
 }
 
@@ -174,6 +201,7 @@ func deleteMultiPvcsAndTestPodWithMultiPvcs() {
 	deleteMultiPvcs()
 }
 
+//nolint:unparam // Currently, waitForControllerReady timeout always receives 4 * time.Minute
 func waitForControllerReady(c kubernetes.Interface, timeout time.Duration) error {
 	err := wait.PollImmediate(3*time.Second, timeout, func() (bool, error) {
 		sts, err := c.AppsV1().StatefulSets(nameSpace).Get(ctx, controllerStsName, metav1.GetOptions{})
@@ -191,6 +219,7 @@ func waitForControllerReady(c kubernetes.Interface, timeout time.Duration) error
 	return nil
 }
 
+//nolint:unparam // Currently, waitForNodeServerReady timeout` always receives 2 * time.Minute
 func waitForNodeServerReady(c kubernetes.Interface, timeout time.Duration) error {
 	err := wait.PollImmediate(3*time.Second, timeout, func() (bool, error) {
 		ds, err := c.AppsV1().DaemonSets(nameSpace).Get(ctx, nodeDsName, metav1.GetOptions{})

@@ -103,7 +103,8 @@ unit-test:
 .PHONY: e2e-test
 e2e-test:
 	@echo === running e2e test
-	@go test -timeout 30m ./e2e
+	@echo === xpu is ${xpu}
+	@go test -timeout 30m ./e2e -args xpu=${xpu}
 
 # helm test
 .PHONY: helm-test

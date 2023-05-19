@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	smaNVMFConfigMapData = `{
+	smaNVMEConfigMapData = `{
   "nodes": [
     {
       "name": "localhost",
@@ -20,24 +20,24 @@ const (
 }`
 )
 
-var _ = ginkgo.Describe("SPDKCSI-SMA-NVMF", func() {
+var _ = ginkgo.Describe("SPDKCSI-SMA-NVME", func() {
 	f := framework.NewDefaultFramework("spdkcsi")
 	ginkgo.BeforeEach(func() {
-		deployConfigs(smaNVMFConfigMapData)
-		deploySmaNvmfConfig()
+		deployConfigs(smaNVMEConfigMapData)
+		deploySmaNvmeConfig()
 		deployCsi()
 	})
 
 	ginkgo.AfterEach(func() {
 		deleteCsi()
-		deleteSmaNvmfConfig()
+		deleteSmaNvmeConfig()
 		deleteConfigs()
 	})
 
-	ginkgo.Context("Test SPDK CSI SMA NVMF", func() {
-		ginkgo.It("Test SPDK CSI SMA NVMF", func() {
-			if isXpu() {
-				ginkgo.Skip("Skipping SPDKCSI-NVMF test: Running on a host")
+	ginkgo.Context("Test SPDK CSI SMA NVME", func() {
+		ginkgo.It("Test SPDK CSI SMA NVME", func() {
+			if !isXpu() {
+				ginkgo.Skip("Skipping SPDKCSI-SMA-NVME test: Running inside a virtual machine")
 			}
 
 			ginkgo.By("checking controller statefulset is running", func() {
@@ -56,7 +56,7 @@ var _ = ginkgo.Describe("SPDKCSI-SMA-NVMF", func() {
 
 			ginkgo.By("log verification for SMA grpc connection", func() {
 				expLogerrMsgMap := map[string]string{
-					"connected to SMA server 127.0.0.1:5114 with TargetType as xpu-sma-nvmftcp": "failed to catch the log about the connection to SMA server from node",
+					"connected to SMA server 127.0.0.1:5114 with TargetType as xpu-sma-nvme": "failed to catch the log about the connection to SMA server from node",
 				}
 				err := verifyNodeServerLog(expLogerrMsgMap)
 				if err != nil {
@@ -95,7 +95,6 @@ var _ = ginkgo.Describe("SPDKCSI-SMA-NVMF", func() {
 					"SMA.CreateDevice": "failed to catch the log about the SMA.CreateDevice phase",
 					"SMA.AttachVolume": "failed to catch the log about the SMA.AttachVolume phase",
 					"SMA.DetachVolume": "failed to catch the log about the SMA.DetachVolume phase",
-					"SMA.DeleteDevice": "failed to catch the log about the SMA.DeleteDevice phase",
 				}
 				err := verifyNodeServerLog(expLogerrMsgMap)
 				if err != nil {
