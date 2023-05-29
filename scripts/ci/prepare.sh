@@ -20,7 +20,7 @@ if [[ $(id -u) != "0" ]]; then
 	exit 1
 fi
 
-while getopts 'yu:p:' optchar; do
+while getopts 'yu:p:vm' optchar; do
 	case "$optchar" in
 		y)
 			PROMPT_FLAG=false
@@ -31,6 +31,8 @@ while getopts 'yu:p:' optchar; do
 		p)
 			DOCKERHUB_SECRET="$OPTARG"
 			;;
+		v) PREPARE_VM=true
+		   ;;
 		*)
 			echo "$0: invalid argument '$optchar'"
 			exit 1
@@ -50,24 +52,30 @@ if $PROMPT_FLAG; then
 fi
 
 export_proxy
-check_os
-allocate_hugepages
-install_packages_"${distro}"
-install_golang
-configure_proxy
-[ "${distro}" == "fedora" ] && configure_system_fedora
-setup_cri_dockerd
-setup_cni_networking
-stop_host_iscsid
-docker_login
 build_spdkimage
+build_spdkcsi
+allocate_hugepages
+prepare_spdk
+prepare_sma
 
+vm=
 # build oracle qemu for nvme
-if [[ "${ARCH}" == "amd64" ]]; then
+if $PREPARE_VM && [[ "${ARCH}" == "amd64" ]]; then
 	vm_build
+	vm_start
+	vm="vm"
 fi
-
+$vm check_os
+$vm install_packages_"${distro}"
+$vm install_golang
+$vm configure_proxy
+[ "${distro}" == "fedora" ] && $vm configure_system_fedora
+$vm setup_cri_dockerd
+$vm setup_cni_networking
+$vm stop_host_iscsid
+$vm docker_login
 # workaround minikube permissions issues when running as root in ci(-like) env
-sysctl fs.protected_regular=0
+$vm sysctl fs.protected_regular=0
+$vm prepare_k8s_cluster
 
 exit 0
