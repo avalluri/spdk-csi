@@ -52,5 +52,7 @@ else
     helm_test
 fi
 
+echo "re-trigger"
+
 set +x
 exit 0
