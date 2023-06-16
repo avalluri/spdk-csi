@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Arm Limited and Contributors
+# Copyright (c) Intel Corporation
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spdkcsi-nodeservercm
+data:
+  # xpu.targetType:
+  #   - SMA: xpu-sma-nvmftcp, xpu-sma-virtioblk, xpu-sma-nvme
+  #   - OPI: xpu-opi-virtioblk, xpu-opi-nvme
+  # xpu.targetAddr:
+  #   - URL to connect the xPU node, http://IPADDR:PORT
+  #   - 127.0.0.1:5114 for SMA server by default
+  #   - 127.0.0.1:50051 for opi-spdk-bridge by default
+  # kvmPciBridges:
+  #   - used by sma-virtioblk, sma-nvme, opi-virtioblk, and opi-nvme
+  #   - based on the configuration in "deploy/spdk/sma.yaml" and qemu VM
+  #
+  nodeserver-config.json: |-
+    {
+      "xpuList": [
+        {
+          "name": "IPU0",
+          "targetType": "xpu-opi-virtioblk",
+          "targetAddr": "127.0.0.1:50051"
+        }
+      ],
+      "kvmPciBridges": 2
+    }

@@ -81,6 +81,8 @@ func NewSpdkCsiXpuInitiator(volumeContext map[string]string, xpuConnClient *grpc
 	switch targetInfo.Backend {
 	case "sma":
 		backend, err = NewSpdkCsiSmaInitiator(volumeContext, xpuConnClient, targetInfo.TrType)
+	case "opi":
+		backend, err = NewSpdkCsiOpiInitiator(volumeContext, xpuConnClient, targetInfo.TrType)
 	default:
 		return nil, fmt.Errorf("unknown target type: %q", targetInfo.Backend)
 	}

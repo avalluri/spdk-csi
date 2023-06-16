@@ -83,7 +83,7 @@ $vm "configure_system_\"${distro}\"; \
 $vm sysctl fs.protected_regular=0
 $vm prepare_k8s_cluster
 
-prepare_spdk
-prepare_sma
+prepare_spdk_storage
+prepare_xpu_node
 
 echo "End of test environment setup!"
