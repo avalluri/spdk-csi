@@ -83,7 +83,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 
 			ginkgo.By("log verification for SMA-NVMF-TCP workflow", func() {
 				expLogList := []string{
-					"connected to SMA server 127.0.0.1:5114 with TargetType as xpu-sma-nvmftcp",
+					"connected to xPU node 127.0.0.1:5114 with TargetType as xpu-sma-nvmftcp",
 					"SMA.CreateDevice",
 					"SMA.AttachVolume",
 					"SMA.DetachVolume",
@@ -119,7 +119,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 
 			ginkgo.By("log verification for SMA-NVME workflow", func() {
 				expLogList := []string{
-					"connected to SMA server 127.0.0.1:5114 with TargetType as xpu-sma-nvme",
+					"connected to xPU node 127.0.0.1:5114 with TargetType as xpu-sma-nvme",
 					"SMA.CreateDevice",
 					"SMA.AttachVolume",
 					"SMA.DetachVolume",
@@ -154,7 +154,7 @@ var _ = ginkgo.Describe("SPDKCSI-XPU", func() {
 
 			ginkgo.By("log verification for SMA-VirtioBlk workflow", func() {
 				expLogList := []string{
-					"connected to SMA server 127.0.0.1:5114 with TargetType as xpu-sma-virtioblk",
+					"connected to xPU node 127.0.0.1:5114 with TargetType as xpu-sma-virtioblk",
 					"SMA.CreateDevice",
 					"SMA.DeleteDevice",
 				}

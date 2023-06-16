@@ -7,13 +7,13 @@ kind: ConfigMap
 metadata:
   name: spdkcsi-nodeservercm
 data:
-  # sma.targetType: xpu-sma-nvmftcp, xpu-sma-virtioblk, xpu-sma-nvme
-  # sma.targetAddr: URL to connect the SMA server on every cluster node,
+  # targetType: xpu-sma-nvmftcp, xpu-sma-virtioblk, xpu-sma-nvme
+  # targetAddr: URL to connect the SMA server on every cluster node,
   #             http://IPADDR:PORT
   #             unix:///path/and/sma.sock
   nodeserver-config.json: |-
     {
-      "smaList": [
+      "xpuList": [
         {
           "name": "IPU0",
           "targetType": "xpu-sma-nvme",

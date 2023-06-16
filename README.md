@@ -260,7 +260,7 @@ Multiple xPU nodes are supported, and each node's configuration includes the nam
 Here is an example of the deploy/kubernetes/nodeserver-config-map.yaml file:
   nodeserver-config.json: |-
     {
-      "smaList": [
+      "xpuList": [
         {
           "name": "IPU0",
           "targetType": "xpu-sma-nvme",

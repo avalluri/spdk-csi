@@ -146,6 +146,19 @@ func detectNvmeDeviceName(nvmeModel string) (string, error) {
 	return "", os.ErrDeadlineExceeded
 }
 
+func readDevice(deviceGlob string) (string, error) {
+	matches, err := filepath.Glob(deviceGlob)
+	if err != nil {
+		return "", err
+	}
+	// two symbol links under /dev/disk/by-id/ to same device
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no matching device found")
+	}
+
+	return matches[0], nil
+}
+
 // get the Nvme block device
 func GetNvmeDeviceName(nvmeModel, bdf string) (string, error) {
 	var deviceName string
@@ -189,13 +202,20 @@ func GetNvmeAvailableFunction(kvmBridgeCount int) (pf, vf uint32, err error) {
 	return 0, 0, os.ErrNotExist
 }
 
-// GetVirtioBlkDevice waits till a block device appears at the
-// given bdf path and returns the device path
-func GetVirtioBlkDevice(bdf string) (string, error) {
+// GetVirtioBlkDevice returns a block device available at the
+// given bdf path. If wait is true then it wait till a device
+// appear at the bdf path.
+func GetVirtioBlkDevice(bdf string, wait bool) (string, error) {
 	// The parent dir path of the block device for VirtioBlk should be
-	// in the form of "/sys/bus/pci/drivers/virtio-pci/0000:01:01.0/virtio2/block"
+	// in the form of "/sys/bus/pci/devices/0000:01:01.0/virtio2/block"
 	sysBusGlob := fmt.Sprintf("/sys/bus/pci/devices/%s/virtio*/block", bdf)
-	deviceParentDirPath, err := waitForDeviceReady(sysBusGlob)
+	var deviceParentDirPath string
+	var err error
+	if wait {
+		deviceParentDirPath, err = waitForDeviceReady(sysBusGlob)
+	} else {
+		deviceParentDirPath, err = readDevice(sysBusGlob)
+	}
 	if err != nil {
 		klog.Errorf("could not find the deviceParentDirPath (%s): %s", sysBusGlob, err)
 		return "", err
